@@ -18,20 +18,6 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CRE
 
 GOOGLE_API_KEY= os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
-'''
-model = genai.GenerativeModel('gemini-1.5-flash',
-                              system_instruction='You are getting information from a patient before they are '
-                                                 'transferred to a nurse. Your conversation should be human like. '
-                                                 'Greet the patient formally, ask for their'
-                                                 'call back number, repeat the phone number and confirm it is correct'
-                                                 'Ask if they are the patient, then ask for their date of birth. '
-                                                 'Finally ask them for their symptoms.'
-                                                 'After, thank the patient for their time and tell them they will be '
-                                                 'transferred to a nurse.'
-                                                 'Only use characters in your response. '
-                                                 'If prompt received while responding, stop responding and only '
-                                                 'respond to the new prompt.')
-                                                '''
 
 model = genai.GenerativeModel('gemini-1.5-flash',
                               system_instruction="Hello, let’s collect some information to expedite your call. What is your callback number? "
