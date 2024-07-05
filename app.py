@@ -1,6 +1,3 @@
-import re
-import sys
-import time
 import numpy as np
 from flask import Flask, jsonify
 from google.cloud import speech
@@ -21,61 +18,37 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CRE
 
 GOOGLE_API_KEY= os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
-
+'''
 model = genai.GenerativeModel('gemini-1.5-flash',
-                              system_instruction='Respond as if you are a human having a conversation over the phone. '
+                              system_instruction='You are getting information from a patient before they are '
+                                                 'transferred to a nurse. Your conversation should be human like. '
+                                                 'Greet the patient formally, ask for their'
+                                                 'call back number, repeat the phone number and confirm it is correct'
+                                                 'Ask if they are the patient, then ask for their date of birth. '
+                                                 'Finally ask them for their symptoms.'
+                                                 'After, thank the patient for their time and tell them they will be '
+                                                 'transferred to a nurse.'
                                                  'Only use characters in your response. '
-                                                 'Keep responses less than 70 characters.'
-                                                 'After receiving prompt, wait for 3 second before responding.'
                                                  'If prompt received while responding, stop responding and only '
                                                  'respond to the new prompt.')
+                                                '''
+
+model = genai.GenerativeModel('gemini-1.5-flash',
+                              system_instruction="Hello, let’s collect some information to expedite your call. What is your callback number? "
+                                                 "I have your callback number as {number} [Slow down repeat]. Is that correct? "
+                                                 "Are you the patient? "
+                                                 "Great, could you please provide me with your date of birth? "
+                                                 "Could you please provide the first three letters of your last name? "
+                                                 "Got it. Are you a biological male or female? "
+                                                 "What state are you in right now? "
+                                                 "Perfect. In a few words, please tell me your main symptom or reason for the call today. "
+                                                 "Give me a moment. We are all set.")
 chat=model.start_chat(history=[])
 
 
 # Audio recording parameters
 RATE = 16000 # sample rate, how often the audio signal is sampled per second
 CHUNK = int(RATE / 10)  # 100ms # how many samples are in each chunk of audio data
-
-
-class Conversation:
-    def __init__(self):
-        self.step=0
-        self.responses={}
-        self.questions = [
-            "Hello, let’s collect some information to expedite your call. What is your callback number?",
-            "Please confirm, is that correct?",
-            "Are you the patient?",
-            "Could you please provide me with your date of birth?",
-            "Could you please provide the first three letters of your last name?",
-            "Got it. Are you a biological male or female?",
-            "What state are you in right now?",
-            "In a few words, please tell me your main symptom or reason for the call today.",
-            "Give me a moment. We are all set."
-        ]
-    def process_response(self, user_input):
-
-        if user_input.strip()=="":
-            return 'Please provide a valid response.'
-
-        if self.step == 1:  # Handle confirmation step specifically
-            if "yes" in user_input.lower() or "correct" in user_input.lower():
-                self.step += 1  # Move to next question if confirmed
-            else:
-                return self.questions[self.step]  # Ask again if not confirmed
-
-        self.responses[self.step] = user_input  # Store user input for current step
-        self.step += 1  # Move to the next step
-
-        if self.step >= len(self.questions):
-            return "Thank you, your information has been processed."
-        return self.questions[self.step]
-
-    def get_initial_question(self):
-        return self.questions[self.step]
-
-
-
-
 
 class MicrophoneStream(object):
     """Opens a recording stream as a generator yielding the audio chunks."""
@@ -98,59 +71,46 @@ class MicrophoneStream(object):
         with sd.InputStream(samplerate=self._rate, channels=1, dtype='int16', blocksize=self._chunk) as stream:
             while not self._closed:
                 data, overflowed = stream.read(self._chunk) # read a chuck of audio
-                if data is not None and not overflowed:
-                    self._buff.put(data.tobytes())
-                    yield self._buff.get()
-                else:
-                    print("Audio buffer overflowed")
-
+                if overflowed:
+                    print("Audio buffer overflowed") # notify if buffer overflow
+                self._buff.put(data.tobytes()) # put data into queue
+                yield self._buff.get() # yield audio data from the queue
 
 def listen_print_loop(responses):
     # Process and print the transcription results as they are received.
-    num_chars_printed = 0  # Track the number of characters printed to handle overwrites
-    buffer = ""
-    response_active = False
-
+    num_chars_printed = 0 # Track the number of characters printed to handle overwrites
+    buffer=""
+    response_active=False
     for response in responses:
         if not response.results:
             continue
 
-        result = response.results[0]  # get the first result
+        result = response.results[0] # get the first result
         if not result.alternatives:
             continue
 
-        transcript = result.alternatives[0].transcript  # get the transcript
-        if not result.is_final:
-            # Update the output with the partial transcript
-            overwrite_chars = ' ' * (num_chars_printed - len(transcript))
-            sys.stdout.write(transcript + overwrite_chars + '\r')
-            sys.stdout.flush()
-            num_chars_printed = len(transcript)
+        transcript = result.alternatives[0].transcript # get the transcript
+        if result.is_final: # check if the result is final
+            buffer+=transcript # add the transcript to the buffer
+            print(buffer)
+            response=chat.send_message(buffer) # send the buffer to the chat model
+            print(response.text) # print the response from the chat model
+            synthesize_text(response.text) # synthesize the response from the chat model
+            buffer="" # reset the buffer
+            num_chars_printed = 0 # reset the number of characters printed
         else:
-            # When the result is final, clear the current line and print the full transcript
-            overwrite_chars = ' ' * num_chars_printed
-            print(transcript + overwrite_chars)  # Clear the output with spaces
-            num_chars_printed = 0  # Reset the character count after the final print
-
-            buffer += transcript.strip()  # Add the final transcript to the buffer
-            if buffer:  # Check if the buffer is not empty
-                print("Transcript:", buffer)
-                next_question = conversation.process_response(buffer)
-                print('Next question:', next_question)
-                synthesize_text(next_question)  # Synthesize the question based on the response
-                buffer = ""  # Reset the buffer after processing
-                time.sleep(1.5)
-            else:
-                print("No valid transcript detected.")
+            overwrite_chars=' ' * (num_chars_printed - len(transcript)) # calculate the number of chars to overwrite
+            print(transcript + overwrite_chars, end='\r') # print the transcript
+            num_chars_printed = len(transcript) # update the number of characters printed
 
 
-
+@app.route('/')
+def index():
+    return jsonify({"message": "API is running. Use /transcribe to start the transcription."})
 
 
 @app.route('/transcribe')
 def transcribe_stream():
-    global conversation
-    conversation=Conversation() # create an instance of the Conversation class
     # Endpoint to start transcribing audio from the microphone
     client = speech.SpeechClient() # Initialize the Google Cloud Speech client
 
@@ -160,12 +120,8 @@ def transcribe_stream():
         language_code="en-US", # Set the audio encoding, sample rate, and language
         enable_automatic_punctuation=True,
         model="telephony",
-        use_enhanced=True,
-        speech_contexts=[speech.SpeechContext(phrases=["yes", "no", "correct", "repeat"], boost=15)],
-        #speech_contexts=[speech.SpeechContext(phrases=["specific term1", "specific term2"], boost=20.0)],
-        enable_word_time_offsets=True  # Helpful for debugging timings
+        speech_contexts=[speech.SpeechContext(phrases=["specific term1", "specific term2"], boost=20.0)]
     )
-
 
     streaming_config = speech.StreamingRecognitionConfig(
         config=config,
@@ -178,16 +134,13 @@ def transcribe_stream():
                     for content in audio_generator if content)
 
         responses = client.streaming_recognize(streaming_config, requests)
-        print("Starting conversation with initial question...")
-        initial_question = conversation.get_initial_question()
-        synthesize_text(initial_question)
+
         try:
             listen_print_loop(responses)
         except Exception as e:
             print(f"Error: {e}")
+
     return jsonify({"status": "transcription completed"})
-
-
 
 
 
@@ -197,12 +150,12 @@ def synthesize_text(text):
     client = texttospeech.TextToSpeechClient() # Initialize the Google Cloud Text-to-Speech client
     input_text = texttospeech.SynthesisInput(text=text) # set the input text
 
+
     voice = texttospeech.VoiceSelectionParams( # set the voice parameters
         language_code="en-US", # set language as english
         name="en-US-Standard-I",
         ssml_gender=texttospeech.SsmlVoiceGender.MALE,
     )
-
 
     audio_config = texttospeech.AudioConfig(
         audio_encoding=texttospeech.AudioEncoding.LINEAR16, # set the audio encoding
