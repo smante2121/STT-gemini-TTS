@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Lookup and Transcription</title>
+</head>
+<body>
+
+<h1>Enter phone number</h1>
+<form method="POST" action="{{ url_for('lookup_number') }}">
+    {{ form.hidden_tag() }}
+    <p>
+        {{ form.number.label }}<br>
+        {{ form.number(size=32) }}<br>
+        <input type="submit" value="Submit">
+    </p>
+</form>
+
+{% if phone_number %}
+    <h2>Lookup Result</h2>
+    <p>{{ phone_number.patient }}: {{ phone_number.number }}</p>
+{% endif %}
+
+<h1>Transcription Controls</h1>
+<button onclick="startTranscription()">Start Transcription</button>
+<button onclick="stopTranscription()">Stop Transcription</button>
+
+<script>
+    function startTranscription() {
+        fetch('/transcribe/start', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => alert('Transcription has started!'));
+    }
+
+    function stopTranscription() {
+        fetch('/transcribe/stop', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.status);  // Update to alert with the response message
+            });
+    }
+</script>
+
+</body>
+</html>
+
+

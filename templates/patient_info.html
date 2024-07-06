@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Info</title>
+</head>
+<body>
+<nav>
+    <ul>
+        <li><a href="{{ url_for('lookup_number') }}">Home</a></li>
+    </ul>
+</nav>
+<h1>Patient Info</h1>
+<p>Number: {{ phone_number.number }}</p>
+<p>Patient: {{ phone_number.patient }}</p>
+<p>Date of Birth: {{ phone_number.dob }}</p>
+<p>Last Name: {{ phone_number.lastName }}</p>
+<p>Gender: {{ phone_number.gender }}</p>
+<p>State: {{ phone_number.state }}</p>
+<p>Symptom: {{ phone_number.symptom }}</p>
+</body>
+</html>
